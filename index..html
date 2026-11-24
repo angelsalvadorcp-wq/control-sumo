@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#121418">
+<title>Control Sumo BT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: herramienta de pits, directa
+   IDEA: transmisor de radiocontrol
+   PICTURE: los propios controles llenan la pantalla
+   COLOUR/TYPE: grafito, naranja de seguridad, rojo de paro; Chakra Petch
+   LAYOUT: barra de estado arriba; columnas Motor 1 | martillo + paro | Motor 2 */
+:root{--bg:#121418;--panel:#1b1e24;--line:#2c313a;--ink:#eef1f5;--dim:#8d96a6;--acc:#ff7a1a;--ok:#35d07f;--stop:#e5322d;color-scheme:dark}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 "Chakra Petch",system-ui,sans-serif;display:flex;flex-direction:column;overflow:hidden;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+button{font:inherit;cursor:pointer}
+button:focus-visible{outline:3px solid var(--acc);outline-offset:2px}
+
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.pill{font-weight:700;min-height:44px;padding:0 18px;border-radius:22px;border:0;background:var(--acc);color:#1a0d00}
+.pill.ghost{background:transparent;color:var(--ink);border:1px solid #3a404b}
+.pill.ghost[aria-pressed=true]{background:#3a404b}
+.estado{display:flex;align-items:center;gap:8px;flex:1 1 120px;color:var(--dim)}
+.estado i{width:10px;height:10px;border-radius:50%;background:#4a505b;flex:none}
+.estado.on{color:var(--ink)}
+.estado.on i{background:var(--ok);box-shadow:0 0 10px var(--ok)}
+.aviso{margin:0;padding:10px 12px;background:#3a2410;color:#ffd2ad;font-size:14px}
+
+.pad{flex:1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.85fr) minmax(0,1fr);gap:10px;padding:12px}
+.col{display:flex;flex-direction:column;gap:10px}
+h2{margin:0;font-size:13px;font-weight:500;color:var(--dim);text-align:center}
+
+.key{flex:1;font-weight:700;font-size:clamp(30px,9vw,56px);line-height:1;color:var(--ink);
+  background:linear-gradient(#2d323b,#21252c);border:1px solid #383e49;border-bottom-width:5px;border-radius:18px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;touch-action:none;transition:transform .06s}
+.key small{font-size:13px;font-weight:500;color:var(--dim)}
+.key.act{background:var(--acc);color:#1a0d00;border-color:#ffa35c;transform:translateY(3px);border-bottom-width:2px}
+.key.act small{color:#4a2400}
+.ham{font-size:clamp(18px,4.8vw,28px)}
+.stop{flex:1.3;background:linear-gradient(#ef4a44,#c3241f);border-color:#ff7a75;color:#fff;font-size:clamp(22px,5.5vw,32px)}
+.stop small{color:#ffd6d4}
+.stop.act{background:#8f1713;color:#fff;border-color:#ff7a75}
+
+.log{display:flex;gap:10px;align-items:center;padding:8px 12px;background:var(--panel);border-top:1px solid var(--line);color:var(--dim);font-size:13px}
+.log output{color:var(--ink);white-space:nowrap;overflow:hidden;word-spacing:.35em}
+
+@media (orientation:landscape) and (max-height:500px){.key{font-size:clamp(24px,6vh,40px)}.ham,.stop{font-size:20px}}
+@media (prefers-reduced-motion:reduce){.key{transition:none}}
+</style>
+</head>
+<body>
+
+<header class="bar">
+  <button id="btnCon" class="pill">Conectar HC-05</button>
+  <span id="estado" class="estado"><i></i><b>Desconectado</b></span>
+  <button id="btnRadar" class="pill ghost" aria-pressed="false">Pausar radar</button>
+</header>
+<p id="aviso" class="aviso" hidden></p>
+
+<main class="pad">
+  <section class="col" aria-label="Motor 1, rueda izquierda">
+    <h2>Motor 1 · izquierdo</h2>
+    <button class="key" data-g="m1" data-on="Q" data-off="Z" data-k="q">▲<small>Adelante · Q</small></button>
+    <button class="key" data-g="m1" data-on="A" data-off="Z" data-k="a">▼<small>Atrás · A</small></button>
+  </section>
+
+  <section class="col" aria-label="Martillo y paro">
+    <h2>Martillo</h2>
+    <button class="key ham" data-g="mart" data-on="G" data-off="H" data-k="g">Golpe<small>G</small></button>
+    <button class="key ham" data-g="mart" data-on="T" data-off="H" data-k="t">Retorno<small>T</small></button>
+    <button id="btnStop" class="key stop">PARO<small>X · espacio</small></button>
+  </section>
+
+  <section class="col" aria-label="Motor 2, rueda derecha">
+    <h2>Motor 2 · derecho</h2>
+    <button class="key" data-g="m2" data-on="E" data-off="C" data-k="e">▲<small>Adelante · E</small></button>
+    <button class="key" data-g="m2" data-on="D" data-off="C" data-k="d">▼<small>Atrás · D</small></button>
+  </section>
+</main>
+
+<footer class="log"><span>Enviado</span><output id="log">—</output></footer>
+
+<script>
+{
+  const SPP = '00001101-0000-1000-8000-00805f9b34fb';   // Serial Port Profile (HC-05)
+  const $ = id => document.getElementById(id);
+  const estado = $('estado'), btnCon = $('btnCon'), btnRadar = $('btnRadar'),
+        btnStop = $('btnStop'), aviso = $('aviso'), log = $('log');
+  const keys = [...document.querySelectorAll('.key[data-on]')];
+  const held = {};               // grupo -> botones presionados (el último manda)
+  const hist = [];
+  let port = null, writer = null, cola = Promise.resolve(), radarPausado = false;
+
+  const hayWebSerial = 'serial' in navigator;
+
+  function avisar(t) { aviso.textContent = t; aviso.hidden = !t; }
+  function vib(ms) { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} }
+
+  function mostrarEstado(txt, on) {
+    estado.querySelector('b').textContent = txt;
+    estado.classList.toggle('on', on);
+    btnCon.textContent = on ? 'Desconectar' : 'Conectar HC-05';
+  }
+
+  function enviar(c) {
+    hist.push(c); if (hist.length > 20) hist.shift();
+    log.textContent = hist.join(' ');
+    if (!writer) return;
+    const w = writer, byte = new Uint8Array([c.charCodeAt(0)]);
+    cola = cola.then(() => w.write(byte)).catch(e => {
+      avisar('Se perdió la conexión: ' + e.message);
+      desconectar();
+    });
+  }
+
+  async function conectar() {
+    if (!hayWebSerial) {
+      avisar('Este navegador no tiene Web Serial. Abre la página en Chrome para Android (versión 137 o más nueva) o en Chrome de computadora.');
+      return;
+    }
+    try {
+      port = await navigator.serial.requestPort({
+        filters: [{ bluetoothServiceClassId: SPP }],
+        allowedBluetoothServiceClassIds: [SPP]
+      });
+      await port.open({ baudRate: 9600 });
+      writer = port.writable.getWriter();
+      mostrarEstado('Conectado', true);
+      avisar('');
+      enviar('X');
+    } catch (e) {
+      port = null; writer = null;
+      mostrarEstado('Desconectado', false);
+      if (e.name !== 'NotFoundError')
+        avisar('No se pudo conectar (' + e.message + '). Revisa que el HC-05 esté emparejado en Ajustes → Bluetooth y encendido.');
+    }
+  }
+
+  async function desconectar() {
+    const p = port, w = writer;
+    port = null; writer = null;
+    mostrarEstado('Desconectado', false);
+    try {
+      await cola;
+      if (w) { await w.write(new Uint8Array([88])).catch(() => {}); w.releaseLock(); }   // 'X'
+      if (p) await p.close();
+    } catch (e) {}
+  }
+
+  function press(k) {
+    const arr = held[k.dataset.g] || (held[k.dataset.g] = []);
+    if (arr.includes(k)) return;
+    arr.push(k);
+    k.classList.add('act');
+    enviar(k.dataset.on);
+    vib(12);
+  }
+
+  function release(k) {
+    const arr = held[k.dataset.g] || [], i = arr.indexOf(k);
+    if (i < 0) return;
+    arr.splice(i, 1);
+    k.classList.remove('act');
+    // Si otro botón del mismo motor sigue presionado, manda el suyo; si no, alto
+    enviar(arr.length ? arr[arr.length - 1].dataset.on : k.dataset.off);
+  }
+
+  function paro() {
+    for (const g in held) { held[g].forEach(k => k.classList.remove('act')); held[g] = []; }
+    enviar('X');
+    vib(40);
+  }
+
+  keys.forEach(k => {
+    k.addEventListener('pointerdown', e => {
+      e.preventDefault();
+      try { k.setPointerCapture(e.pointerId); } catch (err) {}
+      press(k);
+    });
+    ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev =>
+      k.addEventListener(ev, () => release(k)));
+  });
+
+  btnStop.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    btnStop.classList.add('act');
+    paro();
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev =>
+    btnStop.addEventListener(ev, () => btnStop.classList.remove('act')));
+
+  btnCon.addEventListener('click', () => (writer ? desconectar() : conectar()));
+
+  btnRadar.addEventListener('click', () => {
+    radarPausado = !radarPausado;
+    enviar(radarPausado ? 'P' : 'R');
+    btnRadar.textContent = radarPausado ? 'Reanudar radar' : 'Pausar radar';
+    btnRadar.setAttribute('aria-pressed', radarPausado);
+  });
+
+  // Teclado (pruebas desde la computadora): mantener la tecla = mantener el botón
+  const porTecla = Object.fromEntries(keys.map(k => [k.dataset.k, k]));
+  addEventListener('keydown', e => {
+    if (e.repeat) return;
+    if (e.key === ' ') { e.preventDefault(); paro(); return; }
+    const k = porTecla[e.key.toLowerCase()];
+    if (k) press(k);
+  });
+  addEventListener('keyup', e => {
+    const k = porTecla[e.key.toLowerCase()];
+    if (k) release(k);
+  });
+
+  // Seguridad: si la app pasa a segundo plano o se pierde el enlace, paro total
+  document.addEventListener('visibilitychange', () => { if (document.hidden) paro(); });
+  addEventListener('pagehide', paro);
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  if (hayWebSerial) {
+    navigator.serial.addEventListener('disconnect', e => {
+      if (e.target === port) {
+        port = null; writer = null;
+        mostrarEstado('Desconectado', false);
+        avisar('El HC-05 se desconectó. Vuelve a conectar.');
+      }
+    });
+  } else {
+    avisar('Modo prueba: este navegador no tiene Web Serial. Los botones solo muestran las letras abajo. Para controlar el robot usa Chrome en Android 137+.');
+  }
+}
+</script>
+</body>
+</html>
